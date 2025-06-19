@@ -24,8 +24,8 @@ int sensorCount = 0;
 unsigned long lastTime = 0;
 const unsigned long timerDelay = 10000;  // 10 seconds
 
-const char* ssid = "Suryavadhani's S20 FE";
-const char* password = "avadhani";
+const char* ssid = "";
+const char* password = "";
 
 AsyncWebServer server(80);
 
