@@ -13,7 +13,6 @@
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
 
-// Dynamic sensor storage
 struct SensorData {
   String celsius;
   String fahrenheit;
@@ -25,23 +24,26 @@ int sensorCount = 0;
 unsigned long lastTime = 0;
 const unsigned long timerDelay = 10000;  // 10 seconds
 
-const char* ssid = "";
-const char* password = "REPLACE_WITH_YOUR_PASSWORD";
+const char* ssid = "Suryavadhani's S20 FE";
+const char* password = "avadhani";
 
 AsyncWebServer server(80);
 
+// Function to read temperature in Celsius for a sensor
 String readSensorC(int index) {
   sensors.requestTemperatures();
   float tempC = sensors.getTempCByIndex(index);
   return (tempC == DEVICE_DISCONNECTED_C) ? "--" : String(tempC, 1);
 }
 
+// Function to read temperature in Fahrenheit for a sensor
 String readSensorF(int index) {
   sensors.requestTemperatures();
   float tempF = sensors.getTempFByIndex(index);
   return (tempF == DEVICE_DISCONNECTED_F) ? "--" : String(tempF, 1);
 }
 
+// Generate HTML for the dashboard (with sensor placeholders)
 String generateHTML() {
   String html = R"rawliteral(
 <!DOCTYPE HTML><html>
@@ -64,23 +66,17 @@ String generateHTML() {
 </body>
 <script>
 function updateSensor(sensorId) {
-  const celsiusReq = new XMLHttpRequest();
-  celsiusReq.onreadystatechange = function() {
-    if (this.readyState === 4 && this.status === 200) {
-      document.getElementById(`temp${sensorId}c`).innerHTML = this.responseText;
-    }
-  };
-  celsiusReq.open("GET", `/temperature${sensorId}c`, true);
-  celsiusReq.send();
-
-  const fahrenheitReq = new XMLHttpRequest();
-  fahrenheitReq.onreadystatechange = function() {
-    if (this.readyState === 4 && this.status === 200) {
-      document.getElementById(`temp${sensorId}f`).innerHTML = this.responseText;
-    }
-  };
-  fahrenheitReq.open("GET", `/temperature${sensorId}f`, true);
-  fahrenheitReq.send();
+  fetch(`/temperature?sensor=${sensorId}&unit=c`)
+    .then(response => response.text())
+    .then(data => {
+      document.getElementById(`temp${sensorId}c`).innerHTML = data;
+    });
+  
+  fetch(`/temperature?sensor=${sensorId}&unit=f`)
+    .then(response => response.text())
+    .then(data => {
+      document.getElementById(`temp${sensorId}f`).innerHTML = data;
+    });
 }
 
 function updateAllSensors() {
@@ -95,9 +91,20 @@ setInterval(updateAllSensors, 10000);
   return html;
 }
 
-String processor(const String& var) {
-  // Not used in dynamic version
-  return String();
+// Generate HTML for all sensors
+String generateSensorHTML() {
+  String html = "";
+  for (int i = 0; i < sensorCount; i++) {
+    html += "<div class='sensor-container'>";
+    html += "<p><i class='fas fa-thermometer-half' style='color:#059e8a;'></i> ";
+    html += "<span class='ds-labels'>" + sensorReadings[i].label + ": </span>";
+    html += "<span id='temp" + String(i) + "c'>" + sensorReadings[i].celsius + "</span>";
+    html += "<sup class='units'>&deg;C</sup> / ";
+    html += "<span id='temp" + String(i) + "f'>" + sensorReadings[i].fahrenheit + "</span>";
+    html += "<sup class='units'>&deg;F</sup>";
+    html += "</p></div>";
+  }
+  return html;
 }
 
 void setup() {
@@ -127,38 +134,33 @@ void setup() {
 
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
     String html = generateHTML();
-    html.replace("<!-- Sensors dynamically inserted here -->", 
-                generateSensorHTML());
+    html.replace("<!-- Sensors dynamically inserted here -->", generateSensorHTML());
     request->send(200, "text/html", html);
   });
 
-  // Dynamic route creation
-  for (int i = 0; i < sensorCount; i++) {
-    server.on("/temperature" + String(i) + "c", HTTP_GET, [i](AsyncWebServerRequest *request) {
-      request->send(200, "text/plain", sensorReadings[i].celsius);
-    });
-    
-    server.on("/temperature" + String(i) + "f", HTTP_GET, [i](AsyncWebServerRequest *request) {
-      request->send(200, "text/plain", sensorReadings[i].fahrenheit);
-    });
-  }
+  // Unified temperature endpoint with parameters
+  server.on("/temperature", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if(request->hasParam("sensor") && request->hasParam("unit")) {
+      int sensorIndex = request->getParam("sensor")->value().toInt();
+      String unit = request->getParam("unit")->value();
+      
+      if(sensorIndex >= 0 && sensorIndex < sensorCount) {
+        if(unit == "c") {
+          request->send(200, "text/plain", sensorReadings[sensorIndex].celsius);
+        } else if(unit == "f") {
+          request->send(200, "text/plain", sensorReadings[sensorIndex].fahrenheit);
+        } else {
+          request->send(400, "text/plain", "Invalid unit");
+        }
+      } else {
+        request->send(404, "text/plain", "Sensor not found");
+      }
+    } else {
+      request->send(400, "text/plain", "Missing parameters");
+    }
+  });
 
   server.begin();
-}
-
-String generateSensorHTML() {
-  String html = "";
-  for (int i = 0; i < sensorCount; i++) {
-    html += "<div class='sensor-container'>";
-    html += "<p><i class='fas fa-thermometer-half' style='color:#059e8a;'></i> ";
-    html += "<span class='ds-labels'>" + sensorReadings[i].label + ": </span>";
-    html += "<span id='temp" + String(i) + "c'>" + sensorReadings[i].celsius + "</span>";
-    html += "<sup class='units'>&deg;C</sup> / ";
-    html += "<span id='temp" + String(i) + "f'>" + sensorReadings[i].fahrenheit + "</span>";
-    html += "<sup class='units'>&deg;F</sup>";
-    html += "</p></div>";
-  }
-  return html;
 }
 
 void loop() {
